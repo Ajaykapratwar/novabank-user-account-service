@@ -1,4 +1,4 @@
-package com.example.useraccountservice.service;
+package com.example.useraccountservice.security;
 
 import com.example.useraccountservice.entity.User;
 import com.example.useraccountservice.repository.UserRepository;
