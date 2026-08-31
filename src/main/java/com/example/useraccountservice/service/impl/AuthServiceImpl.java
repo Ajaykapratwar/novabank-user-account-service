@@ -68,7 +68,7 @@ public class AuthServiceImpl implements AuthService {
 
         User userToSave = User.builder()
                 .email(registrationRequest.getEmail())
-                .password(registrationRequest.getPassword())
+                .password(passwordEncoder.encode(registrationRequest.getPassword()))
                 .firstName(registrationRequest.getFirstName())
                 .lastName(registrationRequest.getLastName())
                 .enabled(true)
