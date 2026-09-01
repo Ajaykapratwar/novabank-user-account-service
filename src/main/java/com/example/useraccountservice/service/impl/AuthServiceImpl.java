@@ -7,9 +7,9 @@ import com.example.useraccountservice.entity.User;
 import com.example.useraccountservice.enums.AccountStatus;
 import com.example.useraccountservice.enums.AccountType;
 import com.example.useraccountservice.enums.Currency;
-import com.example.useraccountservice.kafka.dto.UserRegistrationEvent;
 import com.example.useraccountservice.exceptions.BadRequestException;
 import com.example.useraccountservice.exceptions.NotFoundException;
+import com.example.useraccountservice.kafka.dto.UserRegistrationEvent;
 import com.example.useraccountservice.kafka.service.AccountEventPublisher;
 import com.example.useraccountservice.repository.AccountRepository;
 import com.example.useraccountservice.repository.RoleRepository;
@@ -25,36 +25,31 @@ import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Set;
 import java.util.concurrent.ThreadLocalRandom;
 
 @Service
-@RequiredArgsConstructor
 @Slf4j
+@RequiredArgsConstructor
 public class AuthServiceImpl implements AuthService {
 
     private final UserRepository userRepository;
-
     private final AccountRepository accountRepository;
-
     private final RoleRepository roleRepository;
-
     private final PasswordEncoder passwordEncoder;
-
     private final JwtService jwtService;
-
     private final ModelMapper modelMapper;
-
     private final AccountEventPublisher accountEventPublisher;
+
 
     @Override
     public ApiResponse<AuthResponse> registerUser(RegistrationRequest registrationRequest) {
         log.info("We are inside the register user service method");
-
-        if(userRepository.existsByEmail(registrationRequest.getEmail())) {
-            throw new BadRequestException("Account already exist for this email.");
+        if(userRepository.existsByEmail(registrationRequest.getEmail())){
+            throw new BadRequestException("Account already exist for this email");
         }
-
+        ;
         Set<Role> roles = new HashSet<>();
 
         String roleName = (registrationRequest.getRole() != null && !registrationRequest.getRole().isBlank())
@@ -62,7 +57,7 @@ public class AuthServiceImpl implements AuthService {
                 : "CUSTOMER";
 
         Role databaseRole = roleRepository.findByName(roleName)
-                .orElseThrow(() -> new NotFoundException("Role with name : " + roleName + " do not exist."));
+                .orElseThrow(()-> new NotFoundException("Role with name" + roleName + " Not found"));
 
         roles.add(databaseRole);
 
@@ -102,35 +97,37 @@ public class AuthServiceImpl implements AuthService {
 
         accountEventPublisher.publishedUserRegistrationEvent(userRegistrationEvent);
 
-        String token = jwtService.generateToken(savedUser.getEmail());
 
+        //comvert to dto
         UserDTO userDTO = modelMapper.map(savedUser, UserDTO.class);
 
         AuthResponse authResponse = AuthResponse.builder()
-                .token(token)
                 .user(userDTO)
                 .build();
 
         return new ApiResponse<>(HttpStatus.CONTINUE.value(), "User account created successfully", authResponse);
+
+
     }
 
     @Override
     public ApiResponse<AuthResponse> loginUser(LoginRequest loginRequest) {
-        log.info("Inside login user method");
-
+        log.info("Inside login service method");
         User user = userRepository.findByEmail(loginRequest.getEmail())
-                .orElseThrow(() ->
-                        new NotFoundException("User mail Id not found"));
+                .orElseThrow(()-> new NotFoundException("User not found"));
 
-        if(!passwordEncoder.matches(loginRequest.getPassword(), user.getPassword())) {
+        if(!passwordEncoder.matches(loginRequest.getPassword(), user.getPassword())){
             throw new BadRequestException("Password doesn't match");
         }
-
-        if(!user.isEnabled()) {
+        if(!user.isEnabled()){
             throw new BadRequestException("User is disabled");
         }
 
-        String token = jwtService.generateToken(user.getEmail());
+        List<String> roles = user.getRoles().stream()
+                .map(Role::getName)
+                .toList();
+
+        String token = jwtService.generateToken(user.getEmail(), roles);
 
         UserDTO userDTO = modelMapper.map(user, UserDTO.class);
 
@@ -141,10 +138,12 @@ public class AuthServiceImpl implements AuthService {
 
         return new ApiResponse<>(
                 HttpStatus.OK.value(),
-                "User account created successfully",
+                "login successful",
                 authResponse
         );
+
     }
+
 
     private String generateUniqueAccountNumber(){
         String accountNumber;
