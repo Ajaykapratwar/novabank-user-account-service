@@ -1,45 +1,29 @@
 # NovaBank User Account Service
 
-A Spring Boot microservice for managing user authentication, authorization, and account-related user data for the NovaBank platform.
+Spring Boot microservice for user authentication, authorization, user profiles, and bank account data in the NovaBank platform.
 
-This project provides the foundational user account layer for a banking application, including user registration, login, JWT-based security, database persistence, and Kafka-ready event integration.
+The service provides:
 
-## Overview
+- User registration and login with stateless JWT authentication
+- BCrypt password hashing and role-based authorization
+- PostgreSQL persistence for users, roles, and accounts
+- Kafka event publishing and balance-update consumption
+- Actuator endpoints for health and monitoring
+- Eureka client registration
 
-NovaBank User Account Service is designed to handle:
-
-- User registration and login
-- JWT-based authentication
-- Role-based authorization
-- PostgreSQL-backed persistence for users, roles, and account records
-- Kafka integration for event-driven messaging
-- Secure Spring Security configuration for protected API access
-
-## Features
-
-- Java 21 + Spring Boot 4.1.1
-- Spring Security with JWT support
-- JPA / Hibernate persistence with PostgreSQL
-- Role management using `Role` and `User` entities
-- Account domain models for banking use cases
-- Event-driven messaging via Kafka
-- Actuator health and metrics endpoints
-- Docker Compose support for Kafka setup
-
-## Tech Stack
+## Technology stack
 
 - Java 21
 - Spring Boot 4.1.1
 - Spring Security
-- Spring Data JPA
+- Spring Data JPA / Hibernate
 - PostgreSQL
-- Kafka
+- Apache Kafka
+- Spring Cloud Netflix Eureka Client
 - Maven
-- Lombok
-- ModelMapper
-- JJWT (JWT library)
+- Lombok, ModelMapper, and JJWT
 
-## Project Structure
+## Project structure
 
 ```text
 novabank-user-account-service/
@@ -47,10 +31,12 @@ novabank-user-account-service/
 │   ├── main/
 │   │   ├── java/com/example/useraccountservice/
 │   │   │   ├── config/
+│   │   │   ├── controller/
 │   │   │   ├── dto/
 │   │   │   ├── entity/
 │   │   │   ├── enums/
 │   │   │   ├── exceptions/
+│   │   │   ├── kafka/
 │   │   │   ├── repository/
 │   │   │   ├── security/
 │   │   │   ├── service/
@@ -58,138 +44,178 @@ novabank-user-account-service/
 │   │   └── resources/
 │   │       └── application.properties
 │   └── test/
-│       └── java/com/example/useraccountservice/
+├── Dockerfile
 ├── docker-compose.yml
 ├── pom.xml
 ├── mvnw
 ├── mvnw.cmd
-├── LICENSE
-├── HELP.md
 └── README.md
 ```
 
 ## Prerequisites
 
-Before running this service, make sure you have:
-
 - Java 21 or later
-- Maven 3.9+
-- PostgreSQL running locally or in a container
-- Kafka running locally or via Docker
+- Docker Desktop, if running Kafka with Docker Compose
+- A PostgreSQL database
+- A Kafka broker
+- A Eureka server at `http://localhost:8761/eureka/` (when service discovery is enabled)
+
+Maven is optional because the repository includes the Maven Wrapper.
 
 ## Configuration
 
-The application configuration is stored in `src/main/resources/application.properties`.
+Configuration is loaded from `src/main/resources/application.properties`. The application imports an optional `.env` file from the project root, and the following environment variables are required for a normal startup:
 
-Default configuration includes:
-
-- Server port: `8081`
-- PostgreSQL database: `novabank_users_account_db`
-- PostgreSQL host: `localhost:5432`
-- Kafka bootstrap server: `localhost:9092`
-- JWT secret and expiration values configured through properties
-
-You should update the database credentials and JWT secret before using this in a real environment.
-
-Example values in `application.properties`:
-
-```properties
-spring.application.name=user-account-service
-server.port=8081
-
-spring.datasource.url=jdbc:postgresql://localhost:5432/novabank_users_account_db
-spring.datasource.username=postgres
-spring.datasource.password=your_password
-
-spring.jpa.hibernate.ddl-auto=update
-
-jwt.secret=your_very_long_and_very_secure_secrete_key_for_authentication_it_should_be_at_least_64_characters_long
-jwt.expiration=86400000
-
-spring.kafka.bootstrap-servers=localhost:9092
+```dotenv
+DB_URL_ACCOUNT=jdbc:postgresql://localhost:5432/novabank_users_account_db
+DB_USERNAME=postgres
+DB_PASSWORD=change-me
+JWT_SECRET=replace-with-a-long-random-secret
+JWT_EXPIRATION=86400000
 ```
 
-## Running with Docker
+The application defaults to:
 
-This project includes Kafka support via Docker Compose.
+| Setting | Default |
+| --- | --- |
+| HTTP port | `8081` |
+| Kafka bootstrap server | `localhost:9092` |
+| Kafka consumer group | `account-group` |
+| Eureka server | `http://localhost:8761/eureka/` |
+| JPA schema mode | `update` |
+
+Do not commit `.env` or real credentials. The repository ignores `.env`; use a local copy containing environment-specific values.
+
+## Start Kafka
+
+The included Compose file starts Kafka only; it does not start PostgreSQL or Eureka.
 
 ```bash
 docker compose up -d
 ```
 
-This starts the Kafka broker used by the application.
-
-## Running the Application
-
-### Using Maven
+Stop Kafka with:
 
 ```bash
-./mvnw clean install
+docker compose down
+```
+
+## Run the application
+
+### Linux or macOS
+
+```bash
 ./mvnw spring-boot:run
 ```
 
-On Windows PowerShell:
+### Windows PowerShell
 
 ```powershell
-mvnw.cmd clean install
-mvnw.cmd spring-boot:run
+.\mvnw.cmd spring-boot:run
 ```
 
-### Build the JAR
+### Build and run the JAR
 
 ```bash
 ./mvnw clean package
 java -jar target/useraccountservice-0.0.1-SNAPSHOT.jar
 ```
 
+On Windows PowerShell:
+
+```powershell
+.\mvnw.cmd clean package
+java -jar target\useraccountservice-0.0.1-SNAPSHOT.jar
+```
+
+### Run with Docker
+
+Build the image and start the service:
+
+```bash
+docker build -t novabank-user-account-service .
+docker run --rm --env-file .env -p 8081:8081 novabank-user-account-service
+```
+
+The container image uses Java 25 at runtime, while the Maven project targets Java 21.
+
+## API
+
+The service listens on `http://localhost:8081`.
+
+### Public endpoints
+
+| Method | Endpoint | Description |
+| --- | --- | --- |
+| `POST` | `/api/auth/register` | Register a user |
+| `POST` | `/api/auth/login` | Authenticate and receive a JWT |
+| `GET` | `/api/auth/hello` | Public welcome endpoint; the current controller declares a `LoginRequest` body |
+| `GET` | `/actuator/**` | Actuator endpoints |
+
+Registration request:
+
+```json
+{
+  "email": "user@example.com",
+  "password": "change-me",
+  "firstName": "Jane",
+  "lastName": "Doe",
+  "role": "USER"
+}
+```
+
+Login request:
+
+```json
+{
+  "email": "user@example.com",
+  "password": "change-me"
+}
+```
+
+Send the returned token on protected requests:
+
+```text
+Authorization: Bearer <jwt>
+```
+
+### Authenticated endpoints
+
+| Method | Endpoint | Description |
+| --- | --- | --- |
+| `GET` | `/api/users/me` | Get the authenticated user's profile |
+| `GET` | `/api/accounts/me` | Get the authenticated user's account |
+| `GET` | `/api/accounts/{accountNumber}` | Get an account by account number |
+
+### Admin endpoints
+
+All admin endpoints require the `ADMIN` authority.
+
+| Method | Endpoint | Description |
+| --- | --- | --- |
+| `GET` | `/api/users/admin/search?email=...&accountNumber=...` | Search for a user |
+| `GET` | `/api/users/admin/all` | List users, optionally filtered by `roleName` |
+| `GET` | `/api/users/admin/stats` | Get user statistics |
+| `PATCH` | `/api/users/admin/toggle-status/{userId}` | Toggle a user's status |
+| `GET` | `/api/accounts/admin/all` | List accounts |
+| `PATCH` | `/api/accounts/admin/status?accountNumber=...&status=...` | Change account status |
+
+Supported account statuses are `ACTIVE`, `FROZEN`, and `CLOSED`. List endpoints use Spring pagination parameters such as `page`, `size`, and `sort`.
+
+## Kafka integration
+
+The service:
+
+- Publishes user registration events to `user-registered-events`
+- Consumes balance updates from `balance-update-events`
+- Publishes balance-update notifications to `balance-update-notification-events`
+
+The Kafka broker must be reachable at the configured `spring.kafka.bootstrap-servers` address.
+
 ## Security
 
-The service uses Spring Security with stateless JWT authentication.
-
-- Public routes are allowed under `/api/auth/**` and `/actuator/**`
-- All other requests require authentication
-- Passwords are encoded using BCrypt
-- JWT tokens are generated and validated in `JwtService`
-
-## API Overview
-
-The application is structured around authentication and user/account services. The security configuration includes the public auth route prefix:
-
-- `POST /api/auth/register`
-- `POST /api/auth/login`
-
-Additional protected endpoints can be added as the system expands.
-
-## Main Components
-
-- `User` — user model with email, password, roles, and status
-- `Role` — user role entity
-- `Account` — banking account entity
-- `AuthService` — registration and login operations
-- `JwtService` — JWT generation and validation
-- `SecurityConfig` — HTTP security rules and BCrypt setup
-- `UserRepository` — repository for user persistence
-
-## Contributing
-
-Contributions are welcome. Please:
-
-1. Fork the repository
-2. Create a feature branch
-3. Commit your changes
-4. Open a pull request
+The application is stateless and uses JWT authentication. Only `/api/auth/**` and `/actuator/**` are public; all other routes require authentication. Admin controllers additionally require the `ADMIN` authority.
 
 ## License
 
-This project is licensed under the MIT License. See the `LICENSE` file for details.
-
-## Notes
-
-This repository is a strong starting point for a banking identity/authentication service and can be extended with:
-
-- user profile management
-- email verification
-- password reset flows
-- account creation and transaction workflows
-- event publishing for account updates and notifications
-
+This project is licensed under the MIT License. See [LICENSE](LICENSE) for details.
